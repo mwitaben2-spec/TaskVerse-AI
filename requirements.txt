@@ -1,0 +1,7 @@
+streamlit
+requests
+pandas
+fastapi
+uvicorn
+jaclang==0.8.10
+jac-cloud==0.2.10
