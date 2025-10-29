@@ -1,2 +1,7 @@
-byllm
+jaseci
+jaclang
 jac-cloud
+fastapi
+uvicorn
+python-dotenv
+email-validator
