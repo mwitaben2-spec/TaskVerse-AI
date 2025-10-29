@@ -1,0 +1,1 @@
+web: jac serve main.jac --port 10000
