@@ -1,36 +1,35 @@
 from fastapi import FastAPI, Request
-from pydantic import BaseModel
-import os
+from jaclang import Jac
+import json
 
-# ---- Create FastAPI app ----
 app = FastAPI()
 
-# ---- Simple model for request ----
-class UserInput(BaseModel):
-    utterance: str
-    session_id: str = ""
+# Load your Jac file (make sure main.jac is in the same folder)
+jac = Jac("main.jac")
 
-# ---- Health check route ----
 @app.get("/")
-def read_root():
-    return {"message": "TaskVerse Backend is Live!"}
+def root():
+    return {"message": "Backend is running and connected!"}
 
-# ---- Mock AI response route ----
+# Actual route for your AI walker
 @app.post("/walker/taskverse_ai")
-async def taskverse_ai(request: Request, data: UserInput):
-    """Simulate AI Walker response (for frontend integration)"""
-    message = data.utterance.strip()
-    if not message:
-        response_text = "Please type something!"
-    else:
-        response_text = f"AI Response: I received your message — '{message}'"
+async def taskverse_ai(request: Request):
+    data = await request.json()
+    utterance = data.get("utterance", "")
+    session_id = data.get("session_id", "")
 
-    # Simulate a consistent response structure
-    return {
-        "reports": [
-            {
-                "response": response_text,
-                "session_id": data.session_id or "session_default_001"
-            }
-        ]
-    }
+    # Call your Jac walker (replace 'taskverse_ai' with your walker name inside main.jac)
+    try:
+        result = jac.run("taskverse_ai", ctx={"utterance": utterance, "session_id": session_id})
+        return json.loads(result.json()) if hasattr(result, "json") else result
+    except Exception as e:
+        return {"error": str(e)}
+
+# Optional route for fetching all tasks
+@app.post("/walker/get_all_tasks")
+async def get_all_tasks():
+    try:
+        result = jac.run("get_all_tasks")
+        return json.loads(result.json()) if hasattr(result, "json") else result
+    except Exception as e:
+        return {"error": str(e)}
