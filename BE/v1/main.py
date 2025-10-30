@@ -1,101 +1,164 @@
+# main.py
+
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
-import json
-import random
-import datetime
+from pydantic import BaseModel
+from dotenv import load_dotenv
+from email.mime.text import MIMEText
+import smtplib
+import os
+from byllm.llm import Model
+from utils import get_current_datetime
 
-app = FastAPI(title="TaskVerse AI Backend")
+load_dotenv()
+app = FastAPI()
+llm = Model(model_name="gemini/gemini-2.5-flash", verbose=False)
 
-# ----------------------------
-# BASIC IN-MEMORY SESSION DATA
-# ----------------------------
-sessions = {}
+# -------------------------------
+# Models
+# -------------------------------
 
-# ----------------------------
-# SIMPLE AI SIMULATION
-# ----------------------------
-def simple_ai_response(user_input: str, session_id: str):
-    """
-    A lightweight AI-style function that simulates intelligent responses.
-    It can tell stories, answer greetings, or discuss tasks.
-    """
-    user_input_lower = user_input.lower()
+class Task(BaseModel):
+    task: str
+    date: str
+    time: str
+    deleted: bool = False
 
-    # greetings
-    if any(word in user_input_lower for word in ["hi", "hello", "hey", "how are you"]):
-        responses = [
-            "Hi there! I'm TaskVerse AI. How are you doing today?",
-            "Hello 👋! I'm here to assist you with your tasks or chat!",
-            "Hey! Hope you’re doing great. What can I do for you?"
-        ]
-        return random.choice(responses)
+class Session(BaseModel):
+    history: list[str] = []
+    created_at: str = get_current_datetime()
 
-    # ask for story
-    elif "story" in user_input_lower:
-        stories = [
-            "Once upon a time in Kuria land, two lovers defied tradition to be together. It’s a tale of courage, love, and redemption.",
-            "Here’s a quick one: A farmer planted hope in dry land — and it blossomed into a forest. 🌳",
-            "Once there was a coder who debugged through the night — and built the future before dawn!"
-        ]
-        return random.choice(stories)
+    def add_history(self, entry: str):
+        self.history.append(entry)
 
-    # task-related
-    elif "task" in user_input_lower:
-        return "Sure! Tell me your task details and I’ll help you schedule or remember them."
+    def get_history(self) -> str:
+        return "\n".join(self.history[-10:])
 
-    # date or time questions
-    elif "time" in user_input_lower:
-        return f"The current time is {datetime.datetime.now().strftime('%H:%M:%S')}."
+# -------------------------------
+# Task Handling
+# -------------------------------
 
-    elif "date" in user_input_lower:
-        return f"Today's date is {datetime.date.today().strftime('%Y-%m-%d')}."
+class TaskHandling:
+    def __init__(self):
+        self.tasks: list[Task] = []
 
-    # fallback generic
-    else:
-        replies = [
-            "I received your message. Could you tell me more?",
-            "Interesting... can you explain that a bit?",
-            "Got it! What would you like me to do with that?",
-        ]
-        return random.choice(replies)
+    def add_task(self, task: str, date: str, time: str) -> str:
+        self.tasks.append(Task(task=task, date=date, time=time))
+        return "Task added successfully."
 
-# ----------------------------
-# API ROUTES
-# ----------------------------
+    def delete_task(self, task_name: str) -> str:
+        for t in self.tasks:
+            if not t.deleted and t.task == task_name:
+                t.deleted = True
+                return f"Task '{task_name}' deleted successfully."
+        return f"Task '{task_name}' not found."
 
-@app.get("/")
-def home():
-    return {"message": "✅ TaskVerse AI Backend is live!"}
+    def update_task(self, task_name: str, new_task: str, new_date: str, new_time: str) -> str:
+        for t in self.tasks:
+            if not t.deleted and t.task == task_name:
+                t.task = new_task
+                t.date = new_date
+                t.time = new_time
+                return f"Task '{task_name}' updated successfully to '{new_task}' scheduled for {new_date} at {new_time}."
+        return f"Task '{task_name}' not found."
 
-@app.post("/walker/taskverse_ai")
-async def chat_endpoint(request: Request):
+    def check_scheduled_tasks(self) -> list[Task]:
+        return [t for t in self.tasks if not t.deleted]
+
+    def extract_task_info(self, utterance: str) -> str:
+        return llm.run("ReAct", tools=[self.add_task, get_current_datetime], input=utterance)
+
+    def summarize_tasks(self) -> str:
+        return llm.run("ReAct", tools=[self.check_scheduled_tasks])
+
+    def route_and_run(self, utterance: str, history: str) -> str:
+        return llm.run("ReAct", tools=[
+            self.extract_task_info,
+            self.summarize_tasks,
+            self.delete_task,
+            self.update_task
+        ], input={"utterance": utterance, "history": history})
+
+# -------------------------------
+# Email Handling
+# -------------------------------
+
+class EmailHandling:
+    def __init__(self):
+        self.sender_email = os.getenv("SENDER_EMAIL")
+        self.sender_password = os.getenv("SENDER_PASSWORD")
+
+    def send_email(self, email_content: str, email_subject: str, email_to: str) -> str:
+        if not self.sender_email or not self.sender_password:
+            return "❌ Missing sender credentials."
+
+        msg = MIMEText(email_content)
+        msg["Subject"] = email_subject
+        msg["From"] = self.sender_email
+        msg["To"] = email_to
+
+        try:
+            server = smtplib.SMTP("smtp.gmail.com", 587)
+            server.starttls()
+            server.login(self.sender_email, self.sender_password)
+            server.sendmail(self.sender_email, email_to, msg.as_string())
+            server.quit()
+            return f"✅ Email sent successfully to {email_to} with subject '{email_subject}'."
+        except Exception as e:
+            return f"❌ Failed to send email: {str(e)}"
+
+    def route_and_run(self, utterance: str, history: str) -> str:
+        return llm.run("ReAct", tools=[self.send_email], input={"utterance": utterance, "history": history})
+
+# -------------------------------
+# General Chat
+# -------------------------------
+
+class GeneralChat:
+    def chat(self, utterance: str, history: str) -> str:
+        return llm.run("ReAct", tools=[], input={"utterance": utterance, "history": history})
+
+# -------------------------------
+# API Endpoints
+# -------------------------------
+
+session = Session()
+task_handler = TaskHandling()
+email_handler = EmailHandling()
+chat_handler = GeneralChat()
+
+@app.post("/task")
+async def handle_task(request: Request):
     data = await request.json()
     utterance = data.get("utterance", "")
-    session_id = data.get("session_id", "default")
+    response = task_handler.route_and_run(utterance, session.get_history())
+    session.add_history(f"user: {utterance}\nai: {response}")
+    return {
+        "session_id": id(session),
+        "created_at": session.created_at,
+        "response": response
+    }
 
-    # Create new session if not exists
-    if session_id not in sessions:
-        sessions[session_id] = {"history": []}
+@app.post("/email")
+async def handle_email(request: Request):
+    data = await request.json()
+    utterance = data.get("utterance", "")
+    response = email_handler.route_and_run(utterance, session.get_history())
+    session.add_history(f"user: {utterance}\nai: {response}")
+    return {
+        "session_id": id(session),
+        "created_at": session.created_at,
+        "response": response
+    }
 
-    # Generate AI response
-    response = simple_ai_response(utterance, session_id)
-    sessions[session_id]["history"].append({"user": utterance, "ai": response})
+@app.post("/chat")
+async def general_chat(request: Request):
+    data = await request.json()
+    utterance = data.get("utterance", "")
+    response = chat_handler.chat(utterance, session.get_history())
+    session.add_history(f"user: {utterance}\nai: {response}")
+    return {
+        "session_id": id(session),
+        "created_at": session.created_at,
+        "response": response
+    }
 
-    return JSONResponse({
-        "reports": [
-            {
-                "session_id": session_id,
-                "created_at": datetime.datetime.now().isoformat(),
-                "response": response
-            }
-        ]
-    })
-
-@app.post("/walker/get_all_tasks")
-async def get_tasks():
-    # placeholder endpoint for the tasks tab in frontend
-    fake_tasks = [
-        {"task": "Finish Streamlit deployment", "date": "2025-10-30", "time": "15:00", "status": "Pending"},
-        {"task": "Review project progress", "date": "2025-10-31", "time": "09:00", "status": "Scheduled"},
-    ]
-    return JSONResponse({"reports": [fake_tasks]})
