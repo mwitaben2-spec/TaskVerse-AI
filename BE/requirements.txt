@@ -1,7 +1,7 @@
 jaseci
-jaclang
-jac-cloud
-fastapi
-uvicorn
 python-dotenv
 email-validator
+fastapi==0.115.11
+uvicorn==0.34.0
+jaclang==0.8.10
+requests==2.32.3
