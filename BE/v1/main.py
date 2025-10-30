@@ -159,3 +159,17 @@ async def chat(msg: Message):
     session.add_history(f"user: {msg.utterance}\nai: {response}")
     return {"response": response}
 
+# -------------------------------
+# Aliased Endpoints for Frontend
+# -------------------------------
+@app.post("/walker/get_all_tasks")
+async def walker_get_all_tasks():
+    response = task_handler.summarize_tasks()
+    return {"response": response}
+
+@app.post("/walker/taskverse_ai")
+async def walker_taskverse_ai(msg: Message):
+    response = chat_handler.chat(msg.utterance)
+    session.add_history(f"user: {msg.utterance}\nai: {response}")
+    return {"response": response}
+
