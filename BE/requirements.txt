@@ -1,5 +1,5 @@
 fastapi
 uvicorn
-jaclang
-requests
 python-dotenv
+jaclang==0.8.10
+
