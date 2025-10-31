@@ -2,6 +2,7 @@ fastapi
 uvicorn
 python-dotenv
 email-validator
-
-
+jaseci
+jaclang
+requests
 
